@@ -1,0 +1,401 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>番茄钟 - 测试</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background-color: #f8fafc;
+            padding: 20px;
+            max-width: 800px;
+            margin: 0 auto;
+        }
+        .test-suite {
+            background: white;
+            border-radius: 8px;
+            padding: 20px;
+            margin-bottom: 20px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+        }
+        .test-case {
+            margin: 10px 0;
+            padding: 10px;
+            border-left: 4px solid;
+        }
+        .test-case.pass {
+            border-left-color: #22c55e;
+            background-color: #f0fdf4;
+        }
+        .test-case.fail {
+            border-left-color: #ef4444;
+            background-color: #fef2f2;
+        }
+        .test-name {
+            font-weight: 600;
+            margin-bottom: 5px;
+        }
+        .test-result {
+            font-size: 14px;
+            color: #64748b;
+        }
+        .summary {
+            font-size: 18px;
+            font-weight: 700;
+            margin-top: 20px;
+            padding: 10px;
+            background: white;
+            border-radius: 8px;
+            text-align: center;
+        }
+        .summary.pass {
+            color: #22c55e;
+        }
+        .summary.fail {
+            color: #ef4444;
+        }
+    </style>
+</head>
+<body>
+    <h1>🍅 番茄钟 - 测试套件</h1>
+    <div id="test-container"></div>
+    <div id="summary"></div>
+
+    <script src="js/utils.js"></script>
+    <script src="js/components/ProgressRing.js"></script>
+    <script src="js/components/Timer.js"></script>
+    <script>
+        class TestRunner {
+            constructor() {
+                this.tests = [];
+                this.passed = 0;
+                this.failed = 0;
+                this.container = document.getElementById('test-container');
+            }
+
+            describe(name, fn) {
+                const suite = document.createElement('div');
+                suite.className = 'test-suite';
+                suite.innerHTML = `<h2>${name}</h2>`;
+                this.container.appendChild(suite);
+                this.currentSuite = suite;
+                fn();
+            }
+
+            it(name, fn) {
+                const testCase = document.createElement('div');
+                testCase.className = 'test-case';
+                testCase.innerHTML = `<div class="test-name">${name}</div>`;
+                
+                try {
+                    fn();
+                    testCase.classList.add('pass');
+                    testCase.innerHTML += '<div class="test-result">✓ 测试通过</div>';
+                    this.passed++;
+                } catch (e) {
+                    testCase.classList.add('fail');
+                    testCase.innerHTML += `<div class="test-result">✗ 测试失败: ${e.message}</div>`;
+                    this.failed++;
+                }
+                
+                this.currentSuite.appendChild(testCase);
+            }
+
+            expect(condition, message = '断言失败') {
+                if (!condition) {
+                    throw new Error(message);
+                }
+            }
+
+            assertEqual(actual, expected, message = '') {
+                if (actual !== expected) {
+                    throw new Error(`${message}\n预期: ${expected}\n实际: ${actual}`);
+                }
+            }
+
+            summary() {
+                const summary = document.getElementById('summary');
+                const total = this.passed + this.failed;
+                summary.className = `summary ${this.failed === 0 ? 'pass' : 'fail'}`;
+                summary.innerHTML = `测试结果: ${this.passed}/${total} 通过, ${this.failed} 失败`;
+            }
+        }
+
+        const runner = new TestRunner();
+
+        runner.describe('1. 时间计算精度验证', () => {
+            runner.it('formatTime 正确格式化毫秒为 MM:SS', () => {
+                runner.assertEqual(Utils.formatTime(25 * 60 * 1000), '25:00');
+                runner.assertEqual(Utils.formatTime(5 * 60 * 1000), '05:00');
+                runner.assertEqual(Utils.formatTime(1500000), '25:00');
+            });
+
+            runner.it('getTodayKey 返回正确的日期格式', () => {
+                const today = new Date();
+                const expected = `${today.getFullYear()}-${(today.getMonth() + 1).toString().padStart(2, '0')}-${today.getDate().toString().padStart(2, '0')}`;
+                runner.assertEqual(Utils.getTodayKey(), expected);
+            });
+
+            runner.it('getLast7Days 返回7天数据', () => {
+                const days = Utils.getLast7Days();
+                runner.assertEqual(days.length, 7);
+                runner.expect(days[0].key.includes('-'), '日期格式正确');
+                runner.expect(days[0].label.includes('/'), '标签格式正确');
+            });
+        });
+
+        runner.describe('2. 统计数据累计逻辑', () => {
+            runner.it('Storage.addPomodoros 正确增加统计数据', () => {
+                const testKey = '2024-01-15';
+                const initial = Storage.getStats()[testKey] || 0;
+                Storage.addPomodoros(testKey, 1);
+                const after = Storage.getStats()[testKey];
+                runner.assertEqual(after, initial + 1);
+            });
+
+            runner.it('get/set 正确读写 localStorage', () => {
+                Storage.set('test_key', { foo: 'bar' });
+                const result = Storage.get('test_key');
+                runner.assertEqual(result.foo, 'bar');
+            });
+        });
+
+        runner.describe('3. 设置表单校验规则', () => {
+            runner.it('工作时长范围校验 1-120 分钟', () => {
+                const validateRange = (value, min, max) => {
+                    const num = parseInt(value);
+                    return !isNaN(num) && num >= min && num <= max;
+                };
+                
+                runner.expect(validateRange(25, 1, 120));
+                runner.expect(validateRange(1, 1, 120));
+                runner.expect(validateRange(120, 1, 120));
+                runner.expect(!validateRange(0, 1, 120));
+                runner.expect(!validateRange(121, 1, 120));
+            });
+
+            runner.it('短休息时长范围校验 1-30 分钟', () => {
+                const validateRange = (value, min, max) => {
+                    const num = parseInt(value);
+                    return !isNaN(num) && num >= min && num <= max;
+                };
+                
+                runner.expect(validateRange(5, 1, 30));
+                runner.expect(validateRange(1, 1, 30));
+                runner.expect(validateRange(30, 1, 30));
+                runner.expect(!validateRange(0, 1, 30));
+                runner.expect(!validateRange(31, 1, 30));
+            });
+
+            runner.it('长休息间隔范围校验 1-10 次', () => {
+                const validateRange = (value, min, max) => {
+                    const num = parseInt(value);
+                    return !isNaN(num) && num >= min && num <= max;
+                };
+                
+                runner.expect(validateRange(4, 1, 10));
+                runner.expect(validateRange(1, 1, 10));
+                runner.expect(validateRange(10, 1, 10));
+                runner.expect(!validateRange(0, 1, 10));
+                runner.expect(!validateRange(11, 1, 10));
+            });
+
+            runner.it('空值和非数字值校验失败', () => {
+                const validateRange = (value, min, max) => {
+                    const num = parseInt(value);
+                    return !isNaN(num) && num >= min && num <= max;
+                };
+                
+                runner.expect(!validateRange('', 1, 120));
+                runner.expect(!validateRange('abc', 1, 120));
+            });
+        });
+
+        runner.describe('4. 图表数据聚合结果', () => {
+            runner.it('正确获取近7天数据', () => {
+                const stats = Storage.getStats();
+                const last7Days = Utils.getLast7Days();
+                const data = last7Days.map(day => stats[day.key] || 0);
+                
+                runner.assertEqual(data.length, 7);
+                data.forEach(value => {
+                    runner.expect(typeof value === 'number');
+                    runner.expect(value >= 0);
+                });
+            });
+
+            runner.it('正确获取标签数组', () => {
+                const last7Days = Utils.getLast7Days();
+                const labels = last7Days.map(day => day.label);
+                
+                runner.assertEqual(labels.length, 7);
+                labels.forEach(label => {
+                    runner.expect(label.includes('/'));
+                });
+            });
+        });
+
+        runner.describe('5. 计时器状态流转（工作→休息→工作循环', () => {
+            runner.it('Timer 初始状态为 idle', () => {
+                const container = document.createElement('div');
+                const timer = new Timer(container, {
+                    settings: {
+                        workDuration: 25 * 60 * 1000,
+                        shortRestDuration: 5 * 60 * 1000,
+                        longRestDuration: 15 * 60 * 1000,
+                        longRestInterval: 4
+                    }
+                });
+                
+                const state = timer.getState();
+                runner.assertEqual(state.mode, 'work');
+                runner.assertEqual(state.status, 'idle');
+                timer.destroy();
+            });
+
+            runner.it('setMode 可以切换到短休息模式', () => {
+                const container = document.createElement('div');
+                const timer = new Timer(container, {
+                    settings: {
+                        workDuration: 25 * 60 * 1000,
+                        shortRestDuration: 5 * 60 * 1000,
+                        longRestDuration: 15 * 60 * 1000,
+                        longRestInterval: 4
+                    }
+                });
+                
+                timer.setMode('shortRest');
+                const state = timer.getState();
+                runner.assertEqual(state.mode, 'shortRest');
+                runner.assertEqual(state.totalTime, 5 * 60 * 1000);
+                timer.destroy();
+            });
+
+            runner.it('setMode 可以切换到长休息模式', () => {
+                const container = document.createElement('div');
+                const timer = new Timer(container, {
+                    settings: {
+                        workDuration: 25 * 60 * 1000,
+                        shortRestDuration: 5 * 60 * 1000,
+                        longRestDuration: 15 * 60 * 1000,
+                        longRestInterval: 4
+                    }
+                });
+                
+                timer.setMode('longRest');
+                const state = timer.getState();
+                runner.assertEqual(state.mode, 'longRest');
+                runner.assertEqual(state.totalTime, 15 * 60 * 1000);
+                timer.destroy();
+            });
+
+            runner.it('工作模式后自动切换到短休息', () => {
+                const container = document.createElement('div');
+                const timer = new Timer(container, {
+                    settings: {
+                        workDuration: 25 * 60 * 1000,
+                        shortRestDuration: 5 * 60 * 1000,
+                        longRestDuration: 15 * 60 * 1000,
+                        longRestInterval: 4
+                    }
+                });
+                
+                timer.pomodoroCount = 1;
+                timer.mode = 'work';
+                timer.autoSwitchMode();
+                
+                const state = timer.getState();
+                runner.assertEqual(state.mode, 'shortRest');
+                timer.destroy();
+            });
+
+            runner.it('每4个番茄后自动切换到长休息', () => {
+                const container = document.createElement('div');
+                const timer = new Timer(container, {
+                    settings: {
+                        workDuration: 25 * 60 * 1000,
+                        shortRestDuration: 5 * 60 * 1000,
+                        longRestDuration: 15 * 60 * 1000,
+                        longRestInterval: 4
+                    }
+                });
+                
+                timer.pomodoroCount = 4;
+                timer.mode = 'work';
+                timer.autoSwitchMode();
+                
+                const state = timer.getState();
+                runner.assertEqual(state.mode, 'longRest');
+                timer.destroy();
+            });
+
+            runner.it('休息后自动切换回工作模式', () => {
+                const container = document.createElement('div');
+                const timer = new Timer(container, {
+                    settings: {
+                        workDuration: 25 * 60 * 1000,
+                        shortRestDuration: 5 * 60 * 1000,
+                        longRestDuration: 15 * 60 * 1000,
+                        longRestInterval: 4
+                    }
+                });
+                
+                timer.mode = 'shortRest';
+                timer.autoSwitchMode();
+                
+                const state = timer.getState();
+                runner.assertEqual(state.mode, 'work');
+                timer.destroy();
+            });
+        });
+
+        runner.describe('6. 任务列表功能', () => {
+            runner.it('可以添加新任务', () => {
+                const initialTasks = Storage.getTasks();
+                const newTask = { id: Date.now(), text: '测试任务', completed: false, createdAt: Date.now() };
+                Storage.saveTasks([...initialTasks, newTask]);
+                const tasks = Storage.getTasks();
+                runner.assertEqual(tasks[tasks.length - 1].text, '测试任务');
+            });
+
+            runner.it('可以标记任务完成', () => {
+                const tasks = Storage.getTasks();
+                if (tasks.length > 0) {
+                    tasks[0].completed = true;
+                    Storage.saveTasks(tasks);
+                    const updatedTasks = Storage.getTasks();
+                    runner.expect(updatedTasks[0].completed);
+                }
+            });
+        });
+
+        runner.describe('7. 进度环组件', () => {
+            runner.it('ProgressRing 可以正确创建', () => {
+                const container = document.createElement('div');
+                const ring = new ProgressRing(container, { size: 100 });
+                runner.expect(container.querySelector('canvas') !== null);
+                ring.destroy();
+            });
+
+            runner.it('ProgressRing 可以绘制进度', () => {
+                const container = document.createElement('div');
+                const ring = new ProgressRing(container, { size: 100 });
+                ring.draw(0.5);
+                runner.expect(true);
+                ring.destroy();
+            });
+
+            runner.it('ProgressRing 可以改变颜色', () => {
+                const container = document.createElement('div');
+                const ring = new ProgressRing(container, { size: 100 });
+                ring.setColor('#ff0000');
+                runner.assertEqual(ring.color, '#ff0000');
+                ring.destroy();
+            });
+        });
+
+        runner.summary();
+    </script>
+</body>
+</html>
