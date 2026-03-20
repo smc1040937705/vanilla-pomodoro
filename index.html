@@ -1,0 +1,1035 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>番茄钟计时器</title>
+  <style>
+    :root {
+      --color-work: #ef4444;
+      --color-break: #22c55e;
+      --color-paused: #6b7280;
+      --color-bg: #f9fafb;
+      --color-card: #ffffff;
+      --color-text: #1f2937;
+      --color-text-light: #6b7280;
+      --color-border: #e5e7eb;
+      --shadow-sm: 0 1px 2px rgba(0,0,0,0.05);
+      --shadow-md: 0 4px 6px -1px rgba(0,0,0,0.1);
+      --radius: 12px;
+    }
+
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background: var(--color-bg);
+      color: var(--color-text);
+      min-height: 100vh;
+      padding: 20px;
+    }
+
+    .container {
+      max-width: 1200px;
+      margin: 0 auto;
+    }
+
+    header {
+      text-align: center;
+      margin-bottom: 30px;
+    }
+
+    header h1 {
+      font-size: 1.75rem;
+      font-weight: 700;
+    }
+
+    .main-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 24px;
+    }
+
+    @media (max-width: 768px) {
+      .main-grid {
+        grid-template-columns: 1fr;
+      }
+    }
+
+    .card {
+      background: var(--color-card);
+      border-radius: var(--radius);
+      padding: 24px;
+      box-shadow: var(--shadow-sm);
+    }
+
+    .card-title {
+      font-size: 1rem;
+      font-weight: 600;
+      margin-bottom: 16px;
+      color: var(--color-text-light);
+    }
+
+    .timer-section {
+      grid-column: 1 / -1;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+    }
+
+    .timer-display {
+      position: relative;
+      width: 300px;
+      height: 300px;
+      margin-bottom: 24px;
+    }
+
+    #progressRing {
+      width: 100%;
+      height: 100%;
+    }
+
+    .timer-info {
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      text-align: center;
+    }
+
+    .timer-time {
+      font-size: 3rem;
+      font-weight: 700;
+      font-variant-numeric: tabular-nums;
+    }
+
+    .timer-label {
+      font-size: 0.875rem;
+      color: var(--color-text-light);
+      margin-top: 4px;
+    }
+
+    .timer-controls {
+      display: flex;
+      gap: 12px;
+    }
+
+    .btn {
+      padding: 12px 24px;
+      border: none;
+      border-radius: 8px;
+      font-size: 1rem;
+      font-weight: 500;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+
+    .btn-primary {
+      background: var(--color-work);
+      color: white;
+    }
+
+    .btn-primary:hover {
+      opacity: 0.9;
+      transform: translateY(-1px);
+    }
+
+    .btn-secondary {
+      background: var(--color-border);
+      color: var(--color-text);
+    }
+
+    .btn-secondary:hover {
+      background: #d1d5db;
+    }
+
+    .btn:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+      transform: none;
+    }
+
+    .stats-grid {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 16px;
+    }
+
+    .stat-item {
+      text-align: center;
+      padding: 16px;
+      background: var(--color-bg);
+      border-radius: 8px;
+    }
+
+    .stat-value {
+      font-size: 2rem;
+      font-weight: 700;
+      color: var(--color-work);
+    }
+
+    .stat-label {
+      font-size: 0.75rem;
+      color: var(--color-text-light);
+      margin-top: 4px;
+    }
+
+    .chart-container {
+      width: 100%;
+      height: 200px;
+    }
+
+    #trendChart {
+      width: 100%;
+      height: 100%;
+    }
+
+    .task-input-group {
+      display: flex;
+      gap: 8px;
+      margin-bottom: 16px;
+    }
+
+    .task-input {
+      flex: 1;
+      padding: 10px 14px;
+      border: 1px solid var(--color-border);
+      border-radius: 8px;
+      font-size: 0.875rem;
+    }
+
+    .task-input:focus {
+      outline: none;
+      border-color: var(--color-work);
+    }
+
+    .task-list {
+      list-style: none;
+    }
+
+    .task-item {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 12px;
+      border-bottom: 1px solid var(--color-border);
+    }
+
+    .task-item:last-child {
+      border-bottom: none;
+    }
+
+    .task-checkbox {
+      width: 20px;
+      height: 20px;
+      accent-color: var(--color-work);
+    }
+
+    .task-text {
+      flex: 1;
+      font-size: 0.875rem;
+    }
+
+    .task-text.completed {
+      text-decoration: line-through;
+      color: var(--color-text-light);
+    }
+
+    .task-delete {
+      padding: 4px 8px;
+      background: none;
+      border: none;
+      color: var(--color-text-light);
+      cursor: pointer;
+      font-size: 0.875rem;
+    }
+
+    .task-delete:hover {
+      color: var(--color-work);
+    }
+
+    .form-group {
+      margin-bottom: 16px;
+    }
+
+    .form-label {
+      display: block;
+      font-size: 0.875rem;
+      font-weight: 500;
+      margin-bottom: 6px;
+    }
+
+    .form-input {
+      width: 100%;
+      padding: 10px 14px;
+      border: 1px solid var(--color-border);
+      border-radius: 8px;
+      font-size: 0.875rem;
+    }
+
+    .form-input:focus {
+      outline: none;
+      border-color: var(--color-work);
+    }
+
+    .form-input.error {
+      border-color: var(--color-work);
+    }
+
+    .form-error {
+      color: var(--color-work);
+      font-size: 0.75rem;
+      margin-top: 4px;
+      display: none;
+    }
+
+    .form-error.show {
+      display: block;
+    }
+
+    .settings-actions {
+      margin-top: 20px;
+    }
+
+    .empty-state {
+      text-align: center;
+      padding: 24px;
+      color: var(--color-text-light);
+      font-size: 0.875rem;
+    }
+
+    .notification {
+      position: fixed;
+      top: 20px;
+      right: 20px;
+      padding: 16px 24px;
+      background: var(--color-work);
+      color: white;
+      border-radius: 8px;
+      box-shadow: var(--shadow-md);
+      transform: translateX(400px);
+      transition: transform 0.3s ease;
+      z-index: 1000;
+    }
+
+    .notification.show {
+      transform: translateX(0);
+    }
+
+    .notification.break {
+      background: var(--color-break);
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <header>
+      <h1>🍅 番茄钟计时器</h1>
+    </header>
+
+    <div class="main-grid">
+      <section class="card timer-section">
+        <div class="timer-display">
+          <canvas id="progressRing" width="300" height="300"></canvas>
+          <div class="timer-info">
+            <div class="timer-time" id="timerDisplay">25:00</div>
+            <div class="timer-label" id="timerLabel">工作时间</div>
+          </div>
+        </div>
+        <div class="timer-controls">
+          <button class="btn btn-primary" id="startBtn">开始</button>
+          <button class="btn btn-secondary" id="pauseBtn" disabled>暂停</button>
+          <button class="btn btn-secondary" id="resetBtn">重置</button>
+        </div>
+      </section>
+
+      <section class="card">
+        <h2 class="card-title">📊 今日统计</h2>
+        <div class="stats-grid" id="statCard"></div>
+      </section>
+
+      <section class="card">
+        <h2 class="card-title">📈 7天趋势</h2>
+        <div class="chart-container">
+          <canvas id="trendChart"></canvas>
+        </div>
+      </section>
+
+      <section class="card">
+        <h2 class="card-title">✅ 专注任务</h2>
+        <div class="task-input-group">
+          <input type="text" class="task-input" id="taskInput" placeholder="添加专注任务...">
+          <button class="btn btn-primary" id="addTaskBtn">添加</button>
+        </div>
+        <ul class="task-list" id="taskList"></ul>
+      </section>
+
+      <section class="card">
+        <h2 class="card-title">⚙️ 设置</h2>
+        <form id="settingsForm">
+          <div class="form-group">
+            <label class="form-label">工作时长（分钟）</label>
+            <input type="number" class="form-input" id="workDuration" min="1" max="60" value="25">
+            <div class="form-error" id="workDurationError">请输入1-60之间的数字</div>
+          </div>
+          <div class="form-group">
+            <label class="form-label">短休息时长（分钟）</label>
+            <input type="number" class="form-input" id="shortBreakDuration" min="1" max="30" value="5">
+            <div class="form-error" id="shortBreakDurationError">请输入1-30之间的数字</div>
+          </div>
+          <div class="form-group">
+            <label class="form-label">长休息时长（分钟）</label>
+            <input type="number" class="form-input" id="longBreakDuration" min="1" max="60" value="15">
+            <div class="form-error" id="longBreakDurationError">请输入1-60之间的数字</div>
+          </div>
+          <div class="form-group">
+            <label class="form-label">长休息间隔（个番茄）</label>
+            <input type="number" class="form-input" id="longBreakInterval" min="1" max="10" value="4">
+            <div class="form-error" id="longBreakIntervalError">请输入1-10之间的数字</div>
+          </div>
+          <div class="form-error" id="crossFieldError">短休息时长不能大于长休息时长</div>
+          <div class="settings-actions">
+            <button type="submit" class="btn btn-primary">保存设置</button>
+          </div>
+        </form>
+      </section>
+    </div>
+  </div>
+
+  <div class="notification" id="notification"></div>
+
+  <script>
+    const Storage = {
+      KEYS: {
+        SETTINGS: 'pomodoro_settings',
+        STATS: 'pomodoro_stats',
+        TASKS: 'pomodoro_tasks'
+      },
+
+      get(key, defaultValue) {
+        try {
+          const item = localStorage.getItem(key);
+          return item ? JSON.parse(item) : defaultValue;
+        } catch {
+          return defaultValue;
+        }
+      },
+
+      set(key, value) {
+        localStorage.setItem(key, JSON.stringify(value));
+      }
+    };
+
+    const DEFAULT_SETTINGS = {
+      workDuration: 25,
+      shortBreakDuration: 5,
+      longBreakDuration: 15,
+      longBreakInterval: 4
+    };
+
+    const DEFAULT_STATS = {
+      today: 0,
+      total: 0,
+      daily: {}
+    };
+
+    const DEFAULT_TASKS = [];
+
+    class ProgressRing {
+      constructor(canvasId) {
+        this.canvas = document.getElementById(canvasId);
+        this.ctx = this.canvas.getContext('2d');
+        this.centerX = this.canvas.width / 2;
+        this.centerY = this.canvas.height / 2;
+        this.radius = 120;
+        this.lineWidth = 12;
+      }
+
+      draw(progress, color) {
+        this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
+        
+        this.ctx.beginPath();
+        this.ctx.arc(this.centerX, this.centerY, this.radius, 0, Math.PI * 2);
+        this.ctx.strokeStyle = '#e5e7eb';
+        this.ctx.lineWidth = this.lineWidth;
+        this.ctx.lineCap = 'round';
+        this.ctx.stroke();
+
+        const startAngle = -Math.PI / 2;
+        const endAngle = startAngle + (Math.PI * 2 * progress);
+
+        this.ctx.beginPath();
+        this.ctx.arc(this.centerX, this.centerY, this.radius, startAngle, endAngle);
+        this.ctx.strokeStyle = color;
+        this.ctx.lineWidth = this.lineWidth;
+        this.ctx.lineCap = 'round';
+        this.ctx.stroke();
+      }
+    }
+
+    class StatCard {
+      constructor(containerId) {
+        this.container = document.getElementById(containerId);
+        this.stats = Storage.get(Storage.KEYS.STATS, DEFAULT_STATS);
+        this.render();
+      }
+
+      updateToday(count) {
+        const today = this.getTodayKey();
+        this.stats.today = count;
+        this.stats.daily[today] = count;
+        this.stats.total += 1;
+        Storage.set(Storage.KEYS.STATS, this.stats);
+        this.render();
+      }
+
+      getTodayKey() {
+        return new Date().toISOString().split('T')[0];
+      }
+
+      render() {
+        this.stats = Storage.get(Storage.KEYS.STATS, DEFAULT_STATS);
+        if (!this.stats.daily) {
+          this.stats.daily = {};
+        }
+        const today = this.getTodayKey();
+        const todayCount = this.stats.daily[today] || 0;
+        
+        this.container.innerHTML = `
+          <div class="stat-item">
+            <div class="stat-value">${todayCount}</div>
+            <div class="stat-label">今日完成</div>
+          </div>
+          <div class="stat-item">
+            <div class="stat-value">${this.stats.total}</div>
+            <div class="stat-label">累计完成</div>
+          </div>
+        `;
+      }
+    }
+
+    class Chart {
+      constructor(canvasId) {
+        this.canvas = document.getElementById(canvasId);
+        this.ctx = this.canvas.getContext('2d');
+        this.resize();
+      }
+
+      resize() {
+        const rect = this.canvas.parentElement.getBoundingClientRect();
+        this.canvas.width = rect.width;
+        this.canvas.height = rect.height;
+      }
+
+      draw(data) {
+        this.resize();
+        this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
+
+        if (!data || data.length === 0) {
+          this.ctx.fillStyle = '#6b7280';
+          this.ctx.font = '14px -apple-system, sans-serif';
+          this.ctx.textAlign = 'center';
+          this.ctx.fillText('暂无数据', this.canvas.width / 2, this.canvas.height / 2);
+          return;
+        }
+
+        const padding = { top: 20, right: 20, bottom: 40, left: 40 };
+        const chartWidth = this.canvas.width - padding.left - padding.right;
+        const chartHeight = this.canvas.height - padding.top - padding.bottom;
+
+        const maxValue = Math.max(...data.map(d => d.value), 1);
+        
+        this.ctx.strokeStyle = '#e5e7eb';
+        this.ctx.lineWidth = 1;
+        for (let i = 0; i <= 4; i++) {
+          const y = padding.top + (chartHeight / 4) * i;
+          this.ctx.beginPath();
+          this.ctx.moveTo(padding.left, y);
+          this.ctx.lineTo(this.canvas.width - padding.right, y);
+          this.ctx.stroke();
+        }
+
+        const points = data.map((d, i) => ({
+          x: padding.left + (chartWidth / (data.length - 1)) * i,
+          y: padding.top + chartHeight - (d.value / maxValue) * chartHeight
+        }));
+
+        this.ctx.strokeStyle = '#ef4444';
+        this.ctx.lineWidth = 2;
+        this.ctx.beginPath();
+        points.forEach((p, i) => {
+          if (i === 0) {
+            this.ctx.moveTo(p.x, p.y);
+          } else {
+            this.ctx.lineTo(p.x, p.y);
+          }
+        });
+        this.ctx.stroke();
+
+        this.ctx.fillStyle = '#ef4444';
+        points.forEach(p => {
+          this.ctx.beginPath();
+          this.ctx.arc(p.x, p.y, 4, 0, Math.PI * 2);
+          this.ctx.fill();
+        });
+
+        this.ctx.fillStyle = '#6b7280';
+        this.ctx.font = '12px -apple-system, sans-serif';
+        this.ctx.textAlign = 'center';
+        data.forEach((d, i) => {
+          const x = padding.left + (chartWidth / (data.length - 1)) * i;
+          const date = new Date(d.date);
+          const label = `${date.getMonth() + 1}/${date.getDate()}`;
+          this.ctx.fillText(label, x, this.canvas.height - 10);
+        });
+      }
+
+      loadData() {
+        const stats = Storage.get(Storage.KEYS.STATS, DEFAULT_STATS);
+        const data = [];
+        const today = new Date();
+        
+        for (let i = 6; i >= 0; i--) {
+          const date = new Date(today);
+          date.setDate(date.getDate() - i);
+          const dateKey = date.toISOString().split('T')[0];
+          data.push({
+            date: dateKey,
+            value: stats.daily[dateKey] || 0
+          });
+        }
+        
+        this.draw(data);
+      }
+    }
+
+    class TaskList {
+      constructor(containerId, onComplete) {
+        this.container = document.getElementById(containerId);
+        this.tasks = Storage.get(Storage.KEYS.TASKS, DEFAULT_TASKS);
+        this.onComplete = onComplete;
+        this.render();
+        this.bindEvents();
+      }
+
+      bindEvents() {
+        document.getElementById('addTaskBtn').addEventListener('click', () => this.addTask());
+        document.getElementById('taskInput').addEventListener('keypress', (e) => {
+          if (e.key === 'Enter') this.addTask();
+        });
+      }
+
+      addTask() {
+        const input = document.getElementById('taskInput');
+        const text = input.value.trim();
+        
+        if (!text) return;
+        
+        const task = {
+          id: Date.now(),
+          text: text,
+          completed: false,
+          createdAt: new Date().toISOString()
+        };
+        
+        this.tasks.push(task);
+        Storage.set(Storage.KEYS.TASKS, this.tasks);
+        input.value = '';
+        this.render();
+      }
+
+      toggleTask(id) {
+        const task = this.tasks.find(t => t.id === id);
+        if (task) {
+          task.completed = !task.completed;
+          Storage.set(Storage.KEYS.TASKS, this.tasks);
+          
+          if (task.completed && this.onComplete) {
+            this.onComplete();
+          }
+          
+          this.render();
+        }
+      }
+
+      deleteTask(id) {
+        this.tasks = this.tasks.filter(t => t.id !== id);
+        Storage.set(Storage.KEYS.TASKS, this.tasks);
+        this.render();
+      }
+
+      render() {
+        if (this.tasks.length === 0) {
+          this.container.innerHTML = '<div class="empty-state">暂无任务</div>';
+          return;
+        }
+
+        this.container.innerHTML = this.tasks.map(task => `
+          <li class="task-item">
+            <input type="checkbox" class="task-checkbox" 
+              ${task.completed ? 'checked' : ''} 
+              onchange="taskList.toggleTask(${task.id})">
+            <span class="task-text ${task.completed ? 'completed' : ''}">${this.escapeHtml(task.text)}</span>
+            <button class="task-delete" onclick="taskList.deleteTask(${task.id})">删除</button>
+          </li>
+        `).join('');
+      }
+
+      escapeHtml(text) {
+        const div = document.createElement('div');
+        div.textContent = text;
+        return div.innerHTML;
+      }
+    }
+
+    class SettingsForm {
+      constructor(formId, onSave) {
+        this.form = document.getElementById(formId);
+        this.onSave = onSave;
+        this.loadSettings();
+        this.bindEvents();
+      }
+
+      loadSettings() {
+        const settings = Storage.get(Storage.KEYS.SETTINGS, DEFAULT_SETTINGS);
+        document.getElementById('workDuration').value = settings.workDuration;
+        document.getElementById('shortBreakDuration').value = settings.shortBreakDuration;
+        document.getElementById('longBreakDuration').value = settings.longBreakDuration;
+        document.getElementById('longBreakInterval').value = settings.longBreakInterval;
+      }
+
+      bindEvents() {
+        this.form.addEventListener('submit', (e) => {
+          e.preventDefault();
+          this.validateAndSave();
+        });
+      }
+
+      validateAndSave() {
+        const fields = [
+          { id: 'workDuration', min: 1, max: 60, key: 'workDuration' },
+          { id: 'shortBreakDuration', min: 1, max: 30, key: 'shortBreakDuration' },
+          { id: 'longBreakDuration', min: 1, max: 60, key: 'longBreakDuration' },
+          { id: 'longBreakInterval', min: 1, max: 10, key: 'longBreakInterval' }
+        ];
+
+        let isValid = true;
+        const settings = {};
+
+        fields.forEach(field => {
+          const input = document.getElementById(field.id);
+          const error = document.getElementById(field.id + 'Error');
+          const value = parseInt(input.value);
+
+          if (isNaN(value) || value < field.min || value > field.max) {
+            input.classList.add('error');
+            error.classList.add('show');
+            isValid = false;
+          } else {
+            input.classList.remove('error');
+            error.classList.remove('show');
+            settings[field.key] = value;
+          }
+        });
+
+        const shortBreak = parseInt(document.getElementById('shortBreakDuration').value);
+        const longBreak = parseInt(document.getElementById('longBreakDuration').value);
+        const crossFieldError = document.getElementById('crossFieldError');
+        
+        if (!isNaN(shortBreak) && !isNaN(longBreak) && shortBreak > longBreak) {
+          document.getElementById('shortBreakDuration').classList.add('error');
+          if (crossFieldError) {
+            crossFieldError.classList.add('show');
+          }
+          isValid = false;
+        } else if (crossFieldError) {
+          crossFieldError.classList.remove('show');
+        }
+
+        if (isValid) {
+          Storage.set(Storage.KEYS.SETTINGS, settings);
+          if (this.onSave) this.onSave(settings);
+          this.showNotification('设置已保存');
+          this.updateTimerDisplay();
+        }
+      }
+
+      updateTimerDisplay() {
+        const settings = Storage.get(Storage.KEYS.SETTINGS, DEFAULT_SETTINGS);
+        const minutes = settings.workDuration;
+        document.getElementById('timerDisplay').textContent = 
+          `${minutes.toString().padStart(2, '0')}:00`;
+        document.getElementById('timerLabel').textContent = '工作时间';
+      }
+
+      showNotification(message) {
+        const notification = document.getElementById('notification');
+        notification.textContent = message;
+        notification.classList.add('show');
+        setTimeout(() => notification.classList.remove('show'), 2000);
+      }
+
+      getSettings() {
+        return Storage.get(Storage.KEYS.SETTINGS, DEFAULT_SETTINGS);
+      }
+    }
+
+    class Timer {
+      constructor(options) {
+        this.progressRing = options.progressRing;
+        this.onTick = options.onTick;
+        this.onComplete = options.onComplete;
+        this.onStateChange = options.onStateChange;
+        this.settings = options.settings;
+        
+        this.state = 'idle';
+        this.mode = 'work';
+        this.pomodorosCompleted = 0;
+        this.startTime = null;
+        this.pausedTime = null;
+        this.remainingTime = 0;
+        this.timerId = null;
+
+        this.colors = {
+          work: '#ef4444',
+          break: '#22c55e',
+          paused: '#6b7280'
+        };
+      }
+
+      getDuration() {
+        const s = this.settings();
+        if (this.mode === 'work') {
+          return s.workDuration * 60 * 1000;
+        } else if (this.mode === 'shortBreak') {
+          return s.shortBreakDuration * 60 * 1000;
+        } else {
+          return s.longBreakDuration * 60 * 1000;
+        }
+      }
+
+      start() {
+        if (this.state === 'running') return;
+
+        if (this.state === 'paused') {
+          const pausedDuration = Date.now() - this.pausedTime;
+          this.startTime = this.startTime + pausedDuration;
+        } else {
+          this.startTime = Date.now();
+          this.remainingTime = this.getDuration();
+        }
+
+        this.state = 'running';
+        this.onStateChange(this.state, this.mode);
+        this.tick();
+      }
+
+      pause() {
+        if (this.state !== 'running') return;
+
+        this.state = 'paused';
+        this.pausedTime = Date.now();
+        this.remainingTime = this.getDuration() - (Date.now() - this.startTime);
+        
+        clearInterval(this.timerId);
+        this.onStateChange(this.state, this.mode);
+      }
+
+      reset() {
+        clearInterval(this.timerId);
+        this.state = 'idle';
+        this.remainingTime = 0;
+        this.startTime = null;
+        this.pausedTime = null;
+        this.mode = 'work';
+        this.onStateChange(this.state, this.mode);
+        this.updateDisplay();
+      }
+
+      updateDisplay() {
+        const duration = this.getDuration();
+        const minutes = Math.floor(duration / 60000);
+        document.getElementById('timerDisplay').textContent = 
+          `${minutes.toString().padStart(2, '0')}:00`;
+        const label = this.mode === 'work' ? '工作时间' : 
+                     this.mode === 'shortBreak' ? '短休息' : '长休息';
+        document.getElementById('timerLabel').textContent = label;
+      }
+
+      tick() {
+        this.timerId = setInterval(() => {
+          const elapsed = Date.now() - this.startTime;
+          const duration = this.getDuration();
+          this.remainingTime = Math.max(0, duration - elapsed);
+
+          const progress = this.remainingTime / duration;
+          const color = this.state === 'paused' ? this.colors.paused : 
+                       (this.mode === 'work' ? this.colors.work : this.colors.break);
+          
+          this.progressRing.draw(progress, color);
+          
+          if (this.onTick) {
+            this.onTick(this.remainingTime, this.mode);
+          }
+
+          if (this.remainingTime <= 0) {
+            this.complete();
+          }
+        }, 50);
+      }
+
+      complete() {
+        clearInterval(this.timerId);
+        
+        if (this.mode === 'work') {
+          this.pomodorosCompleted++;
+        }
+
+        this.state = 'idle';
+        
+        if (this.onComplete) {
+          this.onComplete(this.mode, this.pomodorosCompleted);
+        }
+
+        const s = this.settings();
+        if (this.mode === 'work') {
+          if (this.pomodorosCompleted > 0 && this.pomodorosCompleted % s.longBreakInterval === 0) {
+            this.mode = 'longBreak';
+          } else {
+            this.mode = 'shortBreak';
+          }
+        } else {
+          this.mode = 'work';
+        }
+
+        this.remainingTime = 0;
+        this.startTime = null;
+        this.onStateChange(this.state, this.mode);
+        this.updateDisplay();
+      }
+
+      setMode(mode) {
+        this.mode = mode;
+        this.reset();
+      }
+    }
+
+    const progressRing = new ProgressRing('progressRing');
+    const statCard = new StatCard('statCard');
+    const chart = new Chart('trendChart');
+    let taskList;
+
+    const timer = new Timer({
+      progressRing,
+      settings: () => Storage.get(Storage.KEYS.SETTINGS, DEFAULT_SETTINGS),
+      onTick: (remaining, mode) => {
+        const minutes = Math.floor(remaining / 60000);
+        const seconds = Math.floor((remaining % 60000) / 1000);
+        document.getElementById('timerDisplay').textContent = 
+          `${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
+        
+        const label = mode === 'work' ? '工作时间' : 
+                     mode === 'shortBreak' ? '短休息' : '长休息';
+        document.getElementById('timerLabel').textContent = label;
+      },
+      onComplete: (mode, count) => {
+        if (mode === 'work') {
+          statCard.updateToday(1);
+          chart.loadData();
+        }
+        showNotification(mode === 'work' ? '🎉 工作完成！休息一下吧~' : '⏰ 休息结束！开始工作吧~', 
+                        mode === 'work' ? 'break' : 'work');
+        playNotificationSound();
+      },
+      onStateChange: (state, mode) => {
+        const startBtn = document.getElementById('startBtn');
+        const pauseBtn = document.getElementById('pauseBtn');
+        const resetBtn = document.getElementById('resetBtn');
+        
+        if (state === 'idle') {
+          startBtn.disabled = false;
+          startBtn.textContent = '开始';
+          pauseBtn.disabled = true;
+          resetBtn.disabled = true;
+          
+          if (mode === 'work') {
+            progressRing.draw(1, '#ef4444');
+          } else {
+            progressRing.draw(1, '#22c55e');
+          }
+        } else if (state === 'running') {
+          startBtn.disabled = true;
+          pauseBtn.disabled = false;
+          resetBtn.disabled = false;
+        } else if (state === 'paused') {
+          startBtn.disabled = false;
+          startBtn.textContent = '继续';
+          pauseBtn.disabled = true;
+          resetBtn.disabled = false;
+        }
+      }
+    });
+
+    const settingsForm = new SettingsForm('settingsForm', (settings) => {
+      progressRing.draw(1, '#ef4444');
+    });
+
+    function showNotification(message, type = 'work') {
+      const notification = document.getElementById('notification');
+      notification.textContent = message;
+      notification.className = 'notification show';
+      if (type === 'break') {
+        notification.classList.add('break');
+      }
+      
+      setTimeout(() => {
+        notification.classList.remove('show');
+      }, 4000);
+    }
+
+    function playNotificationSound() {
+      try {
+        const audioContext = new (window.AudioContext || window.webkitAudioContext)();
+        const oscillator = audioContext.createOscillator();
+        const gainNode = audioContext.createGain();
+        
+        oscillator.connect(gainNode);
+        gainNode.connect(audioContext.destination);
+        
+        oscillator.frequency.value = 800;
+        oscillator.type = 'sine';
+        gainNode.gain.setValueAtTime(0.3, audioContext.currentTime);
+        gainNode.gain.exponentialRampToValueAtTime(0.01, audioContext.currentTime + 0.5);
+        
+        oscillator.start(audioContext.currentTime);
+        oscillator.stop(audioContext.currentTime + 0.5);
+      } catch (e) {
+        console.log('Audio not supported');
+      }
+    }
+
+    document.getElementById('startBtn').addEventListener('click', () => timer.start());
+    document.getElementById('pauseBtn').addEventListener('click', () => timer.pause());
+    document.getElementById('resetBtn').addEventListener('click', () => timer.reset());
+
+    taskList = new TaskList('taskList', () => {
+      statCard.updateToday(1);
+      chart.loadData();
+    });
+
+    chart.loadData();
+    progressRing.draw(1, '#ef4444');
+    
+    document.getElementById('startBtn').disabled = false;
+    document.getElementById('startBtn').textContent = '开始';
+    document.getElementById('pauseBtn').disabled = true;
+    document.getElementById('resetBtn').disabled = true;
+
+    window.addEventListener('resize', () => chart.loadData());
+  </script>
+</body>
+</html>
