@@ -1,0 +1,815 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>番茄钟测试</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: #f3f4f6;
+            padding: 20px;
+        }
+
+        .test-container {
+            max-width: 800px;
+            margin: 0 auto;
+        }
+
+        h1 {
+            text-align: center;
+            margin-bottom: 30px;
+            color: #1f2937;
+        }
+
+        .test-suite {
+            background: white;
+            border-radius: 12px;
+            padding: 20px;
+            margin-bottom: 20px;
+            box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+        }
+
+        .test-suite h2 {
+            font-size: 1.25rem;
+            margin-bottom: 15px;
+            color: #374151;
+            border-bottom: 2px solid #e5e7eb;
+            padding-bottom: 10px;
+        }
+
+        .test-case {
+            padding: 12px;
+            margin-bottom: 10px;
+            border-radius: 8px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .test-case.pass {
+            background: #d1fae5;
+            border-left: 4px solid #22c55e;
+        }
+
+        .test-case.fail {
+            background: #fee2e2;
+            border-left: 4px solid #ef4444;
+        }
+
+        .test-case.running {
+            background: #dbeafe;
+            border-left: 4px solid #3b82f6;
+        }
+
+        .test-name {
+            font-weight: 500;
+            color: #1f2937;
+        }
+
+        .test-status {
+            font-size: 0.875rem;
+            font-weight: 600;
+        }
+
+        .test-status.pass {
+            color: #22c55e;
+        }
+
+        .test-status.fail {
+            color: #ef4444;
+        }
+
+        .test-status.running {
+            color: #3b82f6;
+        }
+
+        .error-message {
+            font-size: 0.75rem;
+            color: #ef4444;
+            margin-top: 5px;
+        }
+
+        .summary {
+            background: white;
+            border-radius: 12px;
+            padding: 20px;
+            box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+            text-align: center;
+        }
+
+        .summary h2 {
+            margin-bottom: 15px;
+        }
+
+        .summary-stats {
+            display: flex;
+            justify-content: center;
+            gap: 30px;
+            font-size: 1.125rem;
+        }
+
+        .stat {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+
+        .stat-value {
+            font-size: 2rem;
+            font-weight: 700;
+        }
+
+        .stat-value.pass {
+            color: #22c55e;
+        }
+
+        .stat-value.fail {
+            color: #ef4444;
+        }
+
+        .stat-label {
+            font-size: 0.875rem;
+            color: #6b7280;
+        }
+
+        .run-btn {
+            display: block;
+            width: 100%;
+            padding: 15px;
+            background: #3b82f6;
+            color: white;
+            border: none;
+            border-radius: 8px;
+            font-size: 1rem;
+            font-weight: 600;
+            cursor: pointer;
+            margin-bottom: 20px;
+        }
+
+        .run-btn:hover {
+            background: #2563eb;
+        }
+
+        .run-btn:disabled {
+            background: #9ca3af;
+            cursor: not-allowed;
+        }
+    </style>
+</head>
+<body>
+    <div class="test-container">
+        <h1>🧪 番茄钟单元测试</h1>
+        
+        <button class="run-btn" id="runTests">运行所有测试</button>
+        
+        <div class="summary" id="summary">
+            <h2>测试结果</h2>
+            <div class="summary-stats">
+                <div class="stat">
+                    <div class="stat-value pass" id="passCount">0</div>
+                    <div class="stat-label">通过</div>
+                </div>
+                <div class="stat">
+                    <div class="stat-value fail" id="failCount">0</div>
+                    <div class="stat-label">失败</div>
+                </div>
+                <div class="stat">
+                    <div class="stat-value" id="totalCount" style="color: #6b7280;">0</div>
+                    <div class="stat-label">总计</div>
+                </div>
+            </div>
+        </div>
+
+        <div id="testSuites"></div>
+    </div>
+
+    <script src="js/utils.js"></script>
+    <script src="js/storage.js"></script>
+    <script src="js/components/Timer.js"></script>
+    <script src="js/components/SettingsForm.js"></script>
+    
+    <script>
+        /**
+         * 测试框架
+         */
+        class TestRunner {
+            constructor() {
+                this.suites = [];
+                this.results = [];
+            }
+
+            describe(name, fn) {
+                const suite = {
+                    name,
+                    tests: [],
+                    beforeEach: null,
+                    afterEach: null
+                };
+                this.suites.push(suite);
+                this.currentSuite = suite;
+                fn();
+                this.currentSuite = null;
+            }
+
+            it(name, fn) {
+                if (this.currentSuite) {
+                    this.currentSuite.tests.push({ name, fn });
+                }
+            }
+
+            beforeEach(fn) {
+                if (this.currentSuite) {
+                    this.currentSuite.beforeEach = fn;
+                }
+            }
+
+            afterEach(fn) {
+                if (this.currentSuite) {
+                    this.currentSuite.afterEach = fn;
+                }
+            }
+
+            async run() {
+                this.results = [];
+                
+                for (const suite of this.suites) {
+                    const suiteResult = {
+                        name: suite.name,
+                        tests: []
+                    };
+
+                    for (const test of suite.tests) {
+                        const testResult = {
+                            name: test.name,
+                            status: 'running',
+                            error: null
+                        };
+
+                        try {
+                            if (suite.beforeEach) await suite.beforeEach();
+                            await test.fn();
+                            if (suite.afterEach) await suite.afterEach();
+                            testResult.status = 'pass';
+                        } catch (error) {
+                            testResult.status = 'fail';
+                            testResult.error = error.message;
+                        }
+
+                        suiteResult.tests.push(testResult);
+                    }
+
+                    this.results.push(suiteResult);
+                }
+
+                return this.results;
+            }
+        }
+
+        // 断言函数
+        function expect(actual) {
+            return {
+                toBe(expected) {
+                    if (actual !== expected) {
+                        throw new Error(`Expected ${expected} but got ${actual}`);
+                    }
+                },
+                toEqual(expected) {
+                    if (JSON.stringify(actual) !== JSON.stringify(expected)) {
+                        throw new Error(`Expected ${JSON.stringify(expected)} but got ${JSON.stringify(actual)}`);
+                    }
+                },
+                toBeTruthy() {
+                    if (!actual) {
+                        throw new Error(`Expected truthy but got ${actual}`);
+                    }
+                },
+                toBeFalsy() {
+                    if (actual) {
+                        throw new Error(`Expected falsy but got ${actual}`);
+                    }
+                },
+                toBeGreaterThan(expected) {
+                    if (!(actual > expected)) {
+                        throw new Error(`Expected ${actual} to be greater than ${expected}`);
+                    }
+                },
+                toBeLessThan(expected) {
+                    if (!(actual < expected)) {
+                        throw new Error(`Expected ${actual} to be less than ${expected}`);
+                    }
+                },
+                toBeGreaterThanOrEqual(expected) {
+                    if (!(actual >= expected)) {
+                        throw new Error(`Expected ${actual} to be greater than or equal to ${expected}`);
+                    }
+                },
+                toContain(expected) {
+                    if (!actual.includes(expected)) {
+                        throw new Error(`Expected ${actual} to contain ${expected}`);
+                    }
+                },
+                toHaveLength(expected) {
+                    if (actual.length !== expected) {
+                        throw new Error(`Expected length ${expected} but got ${actual.length}`);
+                    }
+                }
+            };
+        }
+
+        // 创建测试运行器
+        const runner = new TestRunner();
+
+        // ==================== Timer Tests ====================
+        runner.describe('Timer 组件测试', () => {
+            let timer;
+
+            runner.beforeEach(() => {
+                timer = new Timer({
+                    workDuration: 0.05, // 3秒用于测试
+                    breakDuration: 0.03, // 2秒用于测试
+                    longBreakDuration: 0.05
+                });
+            });
+
+            runner.afterEach(() => {
+                if (timer) timer.destroy();
+            });
+
+            runner.it('初始化时应该处于 idle 状态', () => {
+                expect(timer.state).toBe('idle');
+                expect(timer.mode).toBe('work');
+            });
+
+            runner.it('开始计时后应该处于 running 状态', () => {
+                timer.start();
+                expect(timer.state).toBe('running');
+            });
+
+            runner.it('暂停后应该处于 paused 状态', () => {
+                timer.start();
+                timer.pause();
+                expect(timer.state).toBe('paused');
+            });
+
+            runner.it('重置后应该回到 idle 状态', () => {
+                timer.start();
+                timer.reset();
+                expect(timer.state).toBe('idle');
+            });
+
+            runner.it('切换模式应该更新总时间', () => {
+                timer.setMode('break');
+                expect(timer.mode).toBe('break');
+                expect(timer.totalTime).toBe(0.03 * 60 * 1000);
+            });
+
+            runner.it('应该正确计算进度', () => {
+                timer.totalTime = 10000;
+                timer.remainingTime = 5000;
+                expect(timer.getProgress()).toBe(0.5);
+            });
+
+            runner.it('应该正确格式化时间', () => {
+                timer.totalTime = 25 * 60 * 1000;
+                timer.remainingTime = 25 * 60 * 1000;
+                expect(timer.getFormattedTime()).toBe('25:00');
+            });
+
+            runner.it('完成工作模式后应该增加完成计数', () => {
+                timer.setMode('work');
+                timer.completedPomodoros = 0;
+                timer._complete();
+                expect(timer.completedPomodoros).toBe(1);
+            });
+        });
+
+        // ==================== Utils Tests ====================
+        runner.describe('Utils 工具函数测试', () => {
+            runner.it('formatTime 应该正确格式化时间', () => {
+                expect(Utils.formatTime(0)).toBe('00:00');
+                expect(Utils.formatTime(60000)).toBe('01:00');
+                expect(Utils.formatTime(90000)).toBe('01:30');
+                expect(Utils.formatTime(3600000)).toBe('60:00');
+            });
+
+            runner.it('formatDate 应该正确格式化日期', () => {
+                const date = new Date('2024-03-20');
+                expect(Utils.formatDate(date)).toBe('2024-03-20');
+            });
+
+            runner.it('getLast7Days 应该返回7天日期', () => {
+                const days = Utils.getLast7Days();
+                expect(days).toHaveLength(7);
+            });
+
+            runner.it('getWeekDay 应该返回正确的星期', () => {
+                expect(Utils.getWeekDay('2024-03-18')).toContain('周');
+            });
+
+            runner.it('validateSettings 应该验证设置', () => {
+                const valid = Utils.validateSettings({
+                    workDuration: 25,
+                    breakDuration: 5,
+                    longBreakDuration: 15
+                });
+                expect(valid.isValid).toBeTruthy();
+            });
+
+            runner.it('validateSettings 应该检测无效设置', () => {
+                const invalid = Utils.validateSettings({
+                    workDuration: 0,
+                    breakDuration: 5,
+                    longBreakDuration: 15
+                });
+                expect(invalid.isValid).toBeFalsy();
+            });
+
+            runner.it('generateId 应该生成唯一ID', () => {
+                const id1 = Utils.generateId();
+                const id2 = Utils.generateId();
+                expect(id1).not.toBe(id2);
+            });
+
+            runner.it('deepClone 应该深拷贝对象', () => {
+                const obj = { a: 1, b: { c: 2 } };
+                const cloned = Utils.deepClone(obj);
+                expect(cloned).toEqual(obj);
+                cloned.b.c = 3;
+                expect(obj.b.c).toBe(2);
+            });
+        });
+
+        // ==================== Storage Tests ====================
+        runner.describe('Storage 数据存储测试', () => {
+            runner.beforeEach(() => {
+                Storage.clearAll();
+            });
+
+            runner.it('应该保存和读取设置', () => {
+                const settings = {
+                    workDuration: 30,
+                    breakDuration: 10,
+                    longBreakDuration: 20
+                };
+                Storage.saveSettings(settings);
+                const loaded = Storage.getSettings();
+                expect(loaded.workDuration).toBe(30);
+                expect(loaded.breakDuration).toBe(10);
+            });
+
+            runner.it('应该返回默认设置', () => {
+                const settings = Storage.getSettings();
+                expect(settings.workDuration).toBe(25);
+                expect(settings.breakDuration).toBe(5);
+            });
+
+            runner.it('应该保存和读取统计数据', () => {
+                const stats = {
+                    today: 5,
+                    total: 100,
+                    streak: 7
+                };
+                Storage.saveStats(stats);
+                const loaded = Storage.getStats();
+                expect(loaded.today).toBe(5);
+                expect(loaded.total).toBe(100);
+            });
+
+            runner.it('应该添加任务', () => {
+                const task = Storage.addTask('测试任务');
+                expect(task.name).toBe('测试任务');
+                expect(task.id).toBeTruthy();
+                
+                const tasks = Storage.getTasks();
+                expect(tasks).toHaveLength(1);
+            });
+
+            runner.it('应该删除任务', () => {
+                const task = Storage.addTask('测试任务');
+                Storage.removeTask(task.id);
+                const tasks = Storage.getTasks();
+                expect(tasks).toHaveLength(0);
+            });
+
+            runner.it('应该记录历史', () => {
+                const today = Utils.formatDate(new Date());
+                Storage.addHistory(today);
+                Storage.addHistory(today);
+                
+                const history = Storage.getHistory();
+                expect(history[today]).toBe(2);
+            });
+
+            runner.it('应该增加今日番茄数', () => {
+                const stats = Storage.incrementTodayPomodoro();
+                expect(stats.today).toBeGreaterThanOrEqual(1);
+                expect(stats.total).toBeGreaterThanOrEqual(1);
+            });
+
+            runner.it('应该获取最近7天历史', () => {
+                const history = Storage.getLast7DaysHistory();
+                expect(history).toHaveLength(7);
+                expect(history[0].weekDay).toBeTruthy();
+            });
+        });
+
+        // ==================== SettingsForm Tests ====================
+        runner.describe('SettingsForm 设置表单测试', () => {
+            // 创建模拟DOM元素
+            function createMockInput(value) {
+                return {
+                    value: value.toString(),
+                    classList: {
+                        add: () => {},
+                        remove: () => {}
+                    }
+                };
+            }
+
+            runner.it('应该验证有效设置', () => {
+                const valid = Utils.validateSettings({
+                    workDuration: 25,
+                    breakDuration: 5,
+                    longBreakDuration: 15
+                });
+                expect(valid.isValid).toBeTruthy();
+            });
+
+            runner.it('应该验证专注时长范围', () => {
+                const invalid = Utils.validateSettings({
+                    workDuration: 0,
+                    breakDuration: 5,
+                    longBreakDuration: 15
+                });
+                expect(invalid.isValid).toBeFalsy();
+                expect(invalid.errors.workDuration).toBeTruthy();
+            });
+
+            runner.it('应该验证短休息时长范围', () => {
+                const invalid = Utils.validateSettings({
+                    workDuration: 25,
+                    breakDuration: 0,
+                    longBreakDuration: 15
+                });
+                expect(invalid.isValid).toBeFalsy();
+                expect(invalid.errors.breakDuration).toBeTruthy();
+            });
+
+            runner.it('应该验证长休息时长范围', () => {
+                const invalid = Utils.validateSettings({
+                    workDuration: 25,
+                    breakDuration: 5,
+                    longBreakDuration: 100
+                });
+                expect(invalid.isValid).toBeFalsy();
+                expect(invalid.errors.longBreakDuration).toBeTruthy();
+            });
+        });
+
+        // ==================== Integration Tests ====================
+        runner.describe('集成测试 - 计时器状态流转', () => {
+            let timer;
+
+            runner.beforeEach(() => {
+                timer = new Timer({
+                    workDuration: 0.05,
+                    breakDuration: 0.03,
+                    longBreakDuration: 0.05
+                });
+            });
+
+            runner.afterEach(() => {
+                if (timer) timer.destroy();
+            });
+
+            runner.it('应该正确流转: idle -> running -> paused -> running', () => {
+                expect(timer.state).toBe('idle');
+                
+                timer.start();
+                expect(timer.state).toBe('running');
+                
+                timer.pause();
+                expect(timer.state).toBe('paused');
+                
+                timer.start();
+                expect(timer.state).toBe('running');
+            });
+
+            runner.it('应该正确流转: work -> break -> work', () => {
+                timer.setMode('work');
+                expect(timer.mode).toBe('work');
+                
+                timer.setMode('break');
+                expect(timer.mode).toBe('break');
+                
+                timer.setMode('work');
+                expect(timer.mode).toBe('work');
+            });
+
+            runner.it('应该正确流转: work -> longBreak (每4个番茄)', () => {
+                timer.completedPomodoros = 4;
+                timer.setMode('work');
+                timer.nextMode();
+                expect(timer.mode).toBe('longBreak');
+            });
+
+            runner.it('应该正确流转: work -> break (非第4个番茄)', () => {
+                timer.completedPomodoros = 3;
+                timer.setMode('work');
+                timer.nextMode();
+                expect(timer.mode).toBe('break');
+            });
+        });
+
+        // ==================== Time Precision Tests ====================
+        runner.describe('时间计算精度测试', () => {
+            runner.it('应该精确计算毫秒级时间', () => {
+                const timer = new Timer({ workDuration: 1 });
+                timer.start();
+                
+                const startTime = timer.startTime;
+                expect(startTime).toBeGreaterThan(0);
+                
+                const state = timer.getState();
+                expect(state.totalTime).toBe(60000);
+                
+                timer.destroy();
+            });
+
+            runner.it('应该精确计算进度', () => {
+                const timer = new Timer({ workDuration: 1 });
+                timer.totalTime = 1000;
+                timer.remainingTime = 250;
+                
+                const progress = timer.getProgress();
+                expect(progress).toBe(0.75);
+                
+                timer.destroy();
+            });
+
+            runner.it('formatTime 应该正确处理毫秒', () => {
+                expect(Utils.formatTime(59999)).toBe('01:00');
+                expect(Utils.formatTime(60000)).toBe('01:00');
+                expect(Utils.formatTime(61000)).toBe('01:01');
+            });
+        });
+
+        // ==================== Stats Calculation Tests ====================
+        runner.describe('统计数据累计逻辑测试', () => {
+            runner.beforeEach(() => {
+                Storage.clearAll();
+            });
+
+            runner.it('应该正确累计今日番茄数', () => {
+                Storage.incrementTodayPomodoro();
+                Storage.incrementTodayPomodoro();
+                
+                const stats = Storage.getStats();
+                expect(stats.today).toBe(2);
+                expect(stats.total).toBe(2);
+            });
+
+            runner.it('应该正确计算连续天数', () => {
+                const yesterday = new Date();
+                yesterday.setDate(yesterday.getDate() - 1);
+                
+                Storage.saveStats({
+                    today: 3,
+                    total: 10,
+                    streak: 2,
+                    lastActiveDate: Utils.formatDate(yesterday)
+                });
+                
+                const stats = Storage.incrementTodayPomodoro();
+                expect(stats.streak).toBe(3);
+            });
+
+            runner.it('连续天数中断后应该重置', () => {
+                const twoDaysAgo = new Date();
+                twoDaysAgo.setDate(twoDaysAgo.getDate() - 2);
+                
+                Storage.saveStats({
+                    today: 3,
+                    total: 10,
+                    streak: 5,
+                    lastActiveDate: Utils.formatDate(twoDaysAgo)
+                });
+                
+                const stats = Storage.incrementTodayPomodoro();
+                expect(stats.streak).toBe(1);
+            });
+        });
+
+        // ==================== Chart Data Tests ====================
+        runner.describe('图表数据聚合测试', () => {
+            runner.beforeEach(() => {
+                Storage.clearAll();
+            });
+
+            runner.it('应该正确聚合近7天数据', () => {
+                const today = Utils.formatDate(new Date());
+                const yesterday = Utils.formatDate(new Date(Date.now() - 86400000));
+                
+                Storage.addHistory(today);
+                Storage.addHistory(today);
+                Storage.addHistory(yesterday);
+                
+                const history = Storage.getLast7DaysHistory();
+                expect(history).toHaveLength(7);
+                
+                const todayData = history.find(h => h.date === today);
+                const yesterdayData = history.find(h => h.date === yesterday);
+                
+                expect(todayData.count).toBe(2);
+                expect(yesterdayData.count).toBe(1);
+            });
+
+            runner.it('没有数据的日期应该返回0', () => {
+                const history = Storage.getLast7DaysHistory();
+                const today = Utils.formatDate(new Date());
+                const todayData = history.find(h => h.date === today);
+                
+                expect(todayData.count).toBe(0);
+            });
+
+            runner.it('应该包含星期信息', () => {
+                const history = Storage.getLast7DaysHistory();
+                expect(history[0].weekDay).toBeTruthy();
+                expect(history[0].weekDay).toContain('周');
+            });
+        });
+
+        // 渲染测试结果
+        function renderResults(results) {
+            const container = document.getElementById('testSuites');
+            container.innerHTML = '';
+
+            let passCount = 0;
+            let failCount = 0;
+
+            results.forEach(suite => {
+                const suiteEl = document.createElement('div');
+                suiteEl.className = 'test-suite';
+
+                const titleEl = document.createElement('h2');
+                titleEl.textContent = suite.name;
+                suiteEl.appendChild(titleEl);
+
+                suite.tests.forEach(test => {
+                    const testEl = document.createElement('div');
+                    testEl.className = `test-case ${test.status}`;
+
+                    const nameEl = document.createElement('span');
+                    nameEl.className = 'test-name';
+                    nameEl.textContent = test.name;
+
+                    const statusEl = document.createElement('span');
+                    statusEl.className = `test-status ${test.status}`;
+                    statusEl.textContent = test.status === 'pass' ? '✓ 通过' : '✗ 失败';
+
+                    testEl.appendChild(nameEl);
+                    testEl.appendChild(statusEl);
+
+                    if (test.error) {
+                        const errorEl = document.createElement('div');
+                        errorEl.className = 'error-message';
+                        errorEl.textContent = test.error;
+                        testEl.appendChild(errorEl);
+                    }
+
+                    suiteEl.appendChild(testEl);
+
+                    if (test.status === 'pass') passCount++;
+                    else failCount++;
+                });
+
+                container.appendChild(suiteEl);
+            });
+
+            document.getElementById('passCount').textContent = passCount;
+            document.getElementById('failCount').textContent = failCount;
+            document.getElementById('totalCount').textContent = passCount + failCount;
+        }
+
+        // 运行测试
+        document.getElementById('runTests').addEventListener('click', async () => {
+            const btn = document.getElementById('runTests');
+            btn.disabled = true;
+            btn.textContent = '测试中...';
+
+            const results = await runner.run();
+            renderResults(results);
+
+            btn.disabled = false;
+            btn.textContent = '重新运行测试';
+        });
+    </script>
+</body>
+</html>
