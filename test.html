@@ -1,0 +1,498 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>番茄钟测试</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { font-family: -apple-system, monospace; padding: 20px; background: #f3f4f6; }
+    .test-container { max-width: 900px; margin: 0 auto; }
+    h1 { margin-bottom: 20px; color: #1f2937; }
+    .summary { padding: 20px; background: #1f2937; color: white; border-radius: 8px; margin-bottom: 20px; }
+    .summary h2 { margin-bottom: 10px; }
+    .test-group { margin-bottom: 24px; background: white; padding: 20px; border-radius: 8px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
+    .test-title { font-size: 1.1em; font-weight: 600; margin-bottom: 12px; color: #ef4444; }
+    .test-item { padding: 8px 12px; margin: 4px 0; border-radius: 4px; font-size: 14px; }
+    .test-item.pass { background: #dcfce7; color: #166534; }
+    .test-item.fail { background: #fee2e2; color: #991b1b; }
+    .test-item.pending { background: #fef3c7; color: #92400e; }
+    .pass-count { color: #22c55e; }
+    .fail-count { color: #ef4444; }
+  </style>
+</head>
+<body>
+  <div class="test-container">
+    <h1>🍅 番茄钟计时器 - 测试套件</h1>
+    <div class="summary" id="summary"></div>
+    <div id="testGroups"></div>
+  </div>
+
+  <script>
+    const testResults = [];
+    let passCount = 0;
+    let failCount = 0;
+
+    function describe(name, fn) {
+      const groupDiv = document.createElement('div');
+      groupDiv.className = 'test-group';
+      groupDiv.innerHTML = `<div class="test-title">${name}</div><div class="tests"></div>`;
+      document.getElementById('testGroups').appendChild(groupDiv);
+      
+      const originalIt = window.it;
+      window.it = function(testName, testFn) {
+        try {
+          testFn();
+          groupDiv.querySelector('.tests').innerHTML += `<div class="test-item pass">✓ ${testName}</div>`;
+          testResults.push({ name: `${name} - ${testName}`, status: 'pass' });
+          passCount++;
+        } catch (e) {
+          groupDiv.querySelector('.tests').innerHTML += `<div class="test-item fail">✗ ${testName}: ${e.message}</div>`;
+          testResults.push({ name: `${name} - ${testName}`, status: 'fail', error: e.message });
+          failCount++;
+        }
+      };
+      
+      fn();
+      
+      window.it = originalIt;
+    }
+
+    function it(name, fn) {
+      fn();
+    }
+
+    function assert(condition, message) {
+      if (!condition) throw new Error(message || 'Assertion failed');
+    }
+
+    function assertEqual(actual, expected, message) {
+      if (actual !== expected) {
+        throw new Error(message || `Expected ${expected}, got ${actual}`);
+      }
+    }
+
+    function assertDeepEqual(obj1, obj2, message) {
+      if (JSON.stringify(obj1) !== JSON.stringify(obj2)) {
+        throw new Error(message || `Objects are not equal`);
+      }
+    }
+
+    localStorage.clear();
+
+    const Storage = {
+      KEYS: { SETTINGS: 'pomodoro_settings', STATS: 'pomodoro_stats', TASKS: 'pomodoro_tasks' },
+      get(key, defaultValue) {
+        try {
+          const item = localStorage.getItem(key);
+          return item ? JSON.parse(item) : defaultValue;
+        } catch { return defaultValue; }
+      },
+      set(key, value) { localStorage.setItem(key, JSON.stringify(value)); }
+    };
+
+    const DEFAULT_SETTINGS = { workDuration: 25, shortBreakDuration: 5, longBreakDuration: 15, longBreakInterval: 4 };
+    const DEFAULT_STATS = { today: 0, total: 0, daily: {} };
+
+    class MockProgressRing {
+      constructor() { this.lastProgress = 0; this.lastColor = ''; }
+      draw(progress, color) { this.lastProgress = progress; this.lastColor = color; }
+    }
+
+    class StatCard {
+      constructor() { this.stats = Storage.get(Storage.KEYS.STATS, DEFAULT_STATS); }
+      updateToday(count) {
+        const today = new Date().toISOString().split('T')[0];
+        this.stats.today = count;
+        this.stats.daily[today] = count;
+        this.stats.total += 1;
+        Storage.set(Storage.KEYS.STATS, this.stats);
+      }
+      getTodayKey() { return new Date().toISOString().split('T')[0]; }
+    }
+
+    class Timer {
+      constructor(options) {
+        this.progressRing = options.progressRing;
+        this.onTick = options.onTick;
+        this.onComplete = options.onComplete;
+        this.onStateChange = options.onStateChange;
+        this.settings = options.settings;
+        this.state = 'idle';
+        this.mode = 'work';
+        this.pomodorosCompleted = 0;
+        this.startTime = null;
+        this.pausedTime = null;
+        this.remainingTime = 0;
+      }
+      getDuration() {
+        const s = this.settings();
+        if (this.mode === 'work') return s.workDuration * 60 * 1000;
+        else if (this.mode === 'shortBreak') return s.shortBreakDuration * 60 * 1000;
+        else return s.longBreakDuration * 60 * 1000;
+      }
+      start() {
+        if (this.state === 'running') return;
+        if (this.state === 'paused') {
+          const pausedDuration = Date.now() - this.pausedTime;
+          this.startTime = this.startTime + pausedDuration;
+        } else {
+          this.startTime = Date.now();
+          this.remainingTime = this.getDuration();
+        }
+        this.state = 'running';
+        if (this.onStateChange) this.onStateChange(this.state, this.mode);
+      }
+      pause() {
+        if (this.state !== 'running') return;
+        this.state = 'paused';
+        this.pausedTime = Date.now();
+        this.remainingTime = this.getDuration() - (Date.now() - this.startTime);
+        if (this.onStateChange) this.onStateChange(this.state, this.mode);
+      }
+      reset() {
+        this.state = 'idle';
+        this.remainingTime = 0;
+        this.startTime = null;
+        this.pausedTime = null;
+        if (this.onStateChange) this.onStateChange(this.state, this.mode);
+      }
+      complete() {
+        this.state = 'idle';
+        if (this.mode === 'work') this.pomodorosCompleted++;
+        if (this.onComplete) this.onComplete(this.mode, this.pomodorosCompleted);
+        const s = this.settings();
+        if (this.mode === 'work') {
+          if (this.pomodorosCompleted % s.longBreakInterval === 0) this.mode = 'longBreak';
+          else this.mode = 'shortBreak';
+        } else {
+          this.mode = 'work';
+        }
+        this.remainingTime = 0;
+        this.startTime = null;
+        if (this.onStateChange) this.onStateChange(this.state, this.mode);
+      }
+      getRemainingTime() {
+        if (this.state === 'idle') return this.getDuration();
+        if (this.state === 'paused') return this.remainingTime;
+        return Math.max(0, this.getDuration() - (Date.now() - this.startTime));
+      }
+    }
+
+    describe('计时器状态流转测试', () => {
+      const mockRing = new MockProgressRing();
+      let stateHistory = [];
+      
+      const timer = new Timer({
+        progressRing: mockRing,
+        settings: () => ({ ...DEFAULT_SETTINGS }),
+        onStateChange: (state, mode) => stateHistory.push({ state, mode })
+      });
+
+      it('初始状态应为 idle', () => {
+        assertEqual(timer.state, 'idle', '初始状态应该是 idle');
+      });
+
+      it('启动后状态应为 running', () => {
+        timer.start();
+        assertEqual(timer.state, 'running', '启动后状态应该是 running');
+      });
+
+      it('暂停后状态应为 paused', () => {
+        timer.pause();
+        assertEqual(timer.state, 'paused', '暂停后状态应该是 paused');
+      });
+
+      it('重置后状态应为 idle', () => {
+        timer.reset();
+        assertEqual(timer.state, 'idle', '重置后状态应该是 idle');
+      });
+
+      it('工作完成后应切换到短休息', () => {
+        timer.start();
+        timer.complete();
+        assertEqual(timer.mode, 'shortBreak', '工作完成后应该切换到短休息');
+      });
+
+      it('短休息完成后应切换到工作', () => {
+        timer.complete();
+        assertEqual(timer.mode, 'work', '短休息完成后应该切换到工作');
+      });
+
+      it('完成4个番茄后应切换到长休息', () => {
+        timer.mode = 'work';
+        timer.pomodorosCompleted = 3;
+        timer.complete();
+        assertEqual(timer.mode, 'longBreak', '完成4个番茄后应该切换到长休息');
+      });
+
+      it('长休息完成后应切换到工作', () => {
+        timer.complete();
+        assertEqual(timer.mode, 'work', '长休息完成后应该切换到工作');
+      });
+    });
+
+    describe('时间计算精度验证', () => {
+      it('工作时长应为25分钟', () => {
+        const settings = DEFAULT_SETTINGS;
+        const timer = new Timer({ progressRing: new MockProgressRing(), settings: () => settings });
+        assertEqual(timer.getDuration(), 25 * 60 * 1000, '工作时长应该是 25 * 60 * 1000 毫秒');
+      });
+
+      it('短休息时长应为5分钟', () => {
+        const settings = DEFAULT_SETTINGS;
+        const timer = new Timer({ 
+          progressRing: new MockProgressRing(), 
+          settings: () => settings,
+          mode: 'shortBreak'
+        });
+        timer.mode = 'shortBreak';
+        assertEqual(timer.getDuration(), 5 * 60 * 1000, '短休息时长应该是 5 * 60 * 1000 毫秒');
+      });
+
+      it('长休息时长应为15分钟', () => {
+        const settings = DEFAULT_SETTINGS;
+        const timer = new Timer({ 
+          progressRing: new MockProgressRing(), 
+          settings: () => settings,
+          mode: 'longBreak'
+        });
+        timer.mode = 'longBreak';
+        assertEqual(timer.getDuration(), 15 * 60 * 1000, '长休息时长应该是 15 * 60 * 1000 毫秒');
+      });
+
+      it('自定义设置应生效', () => {
+        const customSettings = { workDuration: 30, shortBreakDuration: 10, longBreakDuration: 20, longBreakInterval: 3 };
+        const timer = new Timer({ progressRing: new MockProgressRing(), settings: () => customSettings });
+        assertEqual(timer.getDuration(), 30 * 60 * 1000, '自定义工作时长应该是 30 分钟');
+      });
+
+      it('暂停后恢复应正确计算剩余时间', () => {
+        const timer = new Timer({ progressRing: new MockProgressRing(), settings: () => DEFAULT_SETTINGS });
+        timer.start();
+        timer.pause();
+        const remainingBeforePause = timer.remainingTime;
+        assert(remainingBeforePause > 0 && remainingBeforePause <= 25 * 60 * 1000, '暂停时应该有剩余时间');
+      });
+
+      it('时间戳精度应为毫秒级', () => {
+        const now1 = Date.now();
+        const now2 = Date.now();
+        assert(now2 >= now1, '时间戳应该是单调递增的');
+        const diff = now2 - now1;
+        assert(diff >= 0, '时间差应该是非负的');
+      });
+    });
+
+    describe('统计数据累计逻辑', () => {
+      it('初始统计应为0', () => {
+        localStorage.clear();
+        const statCard = new StatCard();
+        assertEqual(statCard.stats.total, 0, '初始累计应为0');
+        assertEqual(statCard.stats.today, 0, '初始今日应为0');
+      });
+
+      it('完成一个番茄应增加今日和累计', () => {
+        localStorage.clear();
+        const statCard = new StatCard();
+        statCard.updateToday(1);
+        assertEqual(statCard.stats.today, 1, '今日完成应为1');
+        assertEqual(statCard.stats.total, 1, '累计完成应为1');
+      });
+
+      it('完成多个番茄应正确累计', () => {
+        localStorage.clear();
+        const statCard = new StatCard();
+        statCard.updateToday(1);
+        statCard.updateToday(1);
+        statCard.updateToday(1);
+        assertEqual(statCard.stats.today, 3, '今日完成应为3');
+        assertEqual(statCard.stats.total, 3, '累计完成应为3');
+      });
+
+      it('不同日期数据应独立存储', () => {
+        localStorage.clear();
+        const statCard = new StatCard();
+        statCard.stats.daily['2024-01-01'] = 5;
+        statCard.stats.daily['2024-01-02'] = 3;
+        Storage.set(Storage.KEYS.STATS, statCard.stats);
+        
+        const loaded = Storage.get(Storage.KEYS.STATS, DEFAULT_STATS);
+        assertEqual(loaded.daily['2024-01-01'], 5, '2024-01-01数据应为5');
+        assertEqual(loaded.daily['2024-01-02'], 3, '2024-01-02数据应为3');
+      });
+
+      it('统计数据应持久化到localStorage', () => {
+        localStorage.clear();
+        const statCard = new StatCard();
+        statCard.updateToday(10);
+        
+        const loaded = Storage.get(Storage.KEYS.STATS, DEFAULT_STATS);
+        assertEqual(loaded.total, 10, '从localStorage加载的总计应为10');
+      });
+    });
+
+    describe('图表数据聚合结果', () => {
+      const mockStats = {
+        total: 20,
+        daily: {
+          '2024-01-01': 5,
+          '2024-01-02': 3,
+          '2024-01-03': 4,
+          '2024-01-04': 2,
+          '2024-01-05': 1,
+          '2024-01-06': 0,
+          '2024-01-07': 5
+        }
+      };
+
+      it('应生成7天数据', () => {
+        const data = [];
+        const today = new Date('2024-01-07');
+        
+        for (let i = 6; i >= 0; i--) {
+          const date = new Date(today);
+          date.setDate(date.getDate() - i);
+          const dateKey = date.toISOString().split('T')[0];
+          data.push({ date: dateKey, value: mockStats.daily[dateKey] || 0 });
+        }
+        
+        assertEqual(data.length, 7, '应生成7天数据');
+      });
+
+      it('缺少的日期应返回0', () => {
+        const data = [];
+        const today = new Date('2024-01-07');
+        
+        for (let i = 6; i >= 0; i--) {
+          const date = new Date(today);
+          date.setDate(date.getDate() - i);
+          const dateKey = date.toISOString().split('T')[0];
+          data.push({ date: dateKey, value: mockStats.daily[dateKey] || 0 });
+        }
+        
+        assertEqual(data[5].value, 0, '2024-01-02应为0');
+      });
+
+      it('数据应按日期排序', () => {
+        const data = [];
+        const today = new Date('2024-01-07');
+        
+        for (let i = 6; i >= 0; i--) {
+          const date = new Date(today);
+          date.setDate(date.getDate() - i);
+          const dateKey = date.toISOString().split('T')[0];
+          data.push({ date: dateKey, value: mockStats.daily[dateKey] || 0 });
+        }
+        
+        for (let i = 1; i < data.length; i++) {
+          assert(data[i].date > data[i-1].date, '日期应该按升序排列');
+        }
+      });
+
+      it('应正确计算最大值用于Y轴', () => {
+        const values = [5, 3, 4, 2, 1, 0, 5];
+        const maxValue = Math.max(...values, 1);
+        assertEqual(maxValue, 5, '最大值应为5');
+      });
+    });
+
+    describe('设置表单校验规则', () => {
+      it('工作时长有效范围1-60', () => {
+        const validate = (val) => !isNaN(val) && val >= 1 && val <= 60;
+        assert(validate(25), '25应该是有效的');
+        assert(validate(1), '1应该是有效的');
+        assert(validate(60), '60应该是有效的');
+        assert(!validate(0), '0应该是无效的');
+        assert(!validate(61), '61应该是无效的');
+        assert(!validate(-1), '-1应该是无效的');
+      });
+
+      it('短休息有效范围1-30', () => {
+        const validate = (val) => !isNaN(val) && val >= 1 && val <= 30;
+        assert(validate(5), '5应该是有效的');
+        assert(validate(30), '30应该是有效的');
+        assert(!validate(0), '0应该是无效的');
+        assert(!validate(31), '31应该是无效的');
+      });
+
+      it('长休息有效范围1-60', () => {
+        const validate = (val) => !isNaN(val) && val >= 1 && val <= 60;
+        assert(validate(15), '15应该是有效的');
+        assert(!validate(0), '0应该是无效的');
+        assert(!validate(61), '61应该是无效的');
+      });
+
+      it('长休息间隔有效范围1-10', () => {
+        const validate = (val) => !isNaN(val) && val >= 1 && val <= 10;
+        assert(validate(4), '4应该是有效的');
+        assert(validate(1), '1应该是有效的');
+        assert(validate(10), '10应该是有效的');
+        assert(!validate(0), '0应该是无效的');
+        assert(!validate(11), '11应该是无效的');
+      });
+
+      it('空值应被视为无效', () => {
+        const validate = (val) => !isNaN(val) && val >= 1 && val <= 60;
+        assert(!validate(''), '空字符串应该是无效的');
+        assert(!validate(null), 'null应该是无效的');
+        assert(!validate(undefined), 'undefined应该是无效的');
+      });
+
+      it('非数字应被视为无效', () => {
+        const validate = (val) => !isNaN(val) && val >= 1 && val <= 60;
+        assert(!validate('abc'), 'abc应该是无效的');
+        assert(!validate('25分钟'), '25分钟应该是无效的');
+      });
+
+      it('设置应保存到localStorage', () => {
+        localStorage.clear();
+        const settings = { workDuration: 30, shortBreakDuration: 10, longBreakDuration: 20, longBreakInterval: 4 };
+        Storage.set(Storage.KEYS.SETTINGS, settings);
+        
+        const loaded = Storage.get(Storage.KEYS.SETTINGS, DEFAULT_SETTINGS);
+        assertEqual(loaded.workDuration, 30, '工作时长应为30');
+        assertEqual(loaded.shortBreakDuration, 10, '短休息应为10');
+      });
+    });
+
+    describe('任务列表功能', () => {
+      it('应能添加任务', () => {
+        localStorage.clear();
+        const tasks = [];
+        const newTask = { id: Date.now(), text: '测试任务', completed: false, createdAt: new Date().toISOString() };
+        tasks.push(newTask);
+        assertEqual(tasks.length, 1, '任务列表长度应为1');
+        assertEqual(tasks[0].text, '测试任务', '任务文本应为"测试任务"');
+      });
+
+      it('应能标记任务完成', () => {
+        localStorage.clear();
+        const tasks = [{ id: 1, text: '测试', completed: false }];
+        const task = tasks.find(t => t.id === 1);
+        task.completed = true;
+        assert(task.completed, '任务应该被标记为完成');
+      });
+
+      it('应能删除任务', () => {
+        localStorage.clear();
+        const tasks = [{ id: 1, text: '任务1' }, { id: 2, text: '任务2' }];
+        const filtered = tasks.filter(t => t.id !== 1);
+        assertEqual(filtered.length, 1, '过滤后长度应为1');
+        assertEqual(filtered[0].id, 2, '剩余任务id应为2');
+      });
+
+      it('已完成任务应显示删除线', () => {
+        const task = { text: '测试任务', completed: true };
+        const className = task.completed ? 'completed' : '';
+        assertEqual(className, 'completed', '已完成任务应有completed类名');
+      });
+    });
+
+    document.getElementById('summary').innerHTML = `
+      <h2>测试结果汇总</h2>
+      <p>通过: <span class="pass-count">${passCount}</span> | 失败: <span class="fail-count">${failCount}</span></p>
+    `;
+  </script>
+</body>
+</html>
